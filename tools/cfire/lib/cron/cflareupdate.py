@@ -62,19 +62,22 @@ def downloadCFdb(cfdbpath, cfdbfile, updatehost):
                 print('[-] Please use -p|--cfdbpath to specify writable directory path.')
                 raise SystemExit
 
-    _filename = '{}/{}'.format(cfdbpath, cfdbfile.split('/')[-1])
+    _filename = f"{cfdbpath}/{cfdbfile.split('/')[-1]}"
 
     # Download file to cfdbpath
     try:
         with open(_filename, 'wb') as f:
-            print('[+] Downloading {} to {}'.format(cfdbfile, _filename))
+            print(f'[+] Downloading {cfdbfile} to {_filename}')
             try:
                 response = requests.get(cfdbfile, stream=True)
             except Exception:
-                print('[-] Could not make connection to {}. Confirm you have correct host.'.format(updatehost))
+                print(
+                    f'[-] Could not make connection to {updatehost}. Confirm you have correct host.'
+                )
+
                 raise SystemExit
             if response.status_code != 200:
-                print('[-] {} not found. Please enter correct host/path'.format(cfdbfile))
+                print(f'[-] {cfdbfile} not found. Please enter correct host/path')
                 raise SystemExit
             total_length = response.headers.get('content-length')
 
@@ -83,11 +86,11 @@ def downloadCFdb(cfdbpath, cfdbfile, updatehost):
             else:
                 dl = 0
                 total_length = int(total_length)
-                for data in response.iter_content(chunk_size=int(total_length/100)):
+                for data in response.iter_content(chunk_size=total_length // 100):
                     dl += len(data)
                     f.write(data)
                     done = int(50 * dl / total_length)
-                    sys.stdout.write('\r[{}{}]'.format('=' * done, ' ' * (50-done)) )
+                    sys.stdout.write(f"\r[{'=' * done}{' ' * (50-done)}]")
                     sys.stdout.flush()
         sys.stdout.write('\n')
 
@@ -99,7 +102,7 @@ def downloadCFdb(cfdbpath, cfdbfile, updatehost):
 
 def createCFdb(cfdbpath):
     """Initiates parsing and database creation"""
-    print('[*] Creating SQLite3 Database into {}/cf.db'.format(cfdbpath))
+    print(f'[*] Creating SQLite3 Database into {cfdbpath}/cf.db')
     # Parse nsout archive into dict
     parsensout(cfdbpath)
     # Parse country archive into dict
@@ -111,7 +114,7 @@ def parsensout(cfdbpath):
     """Parse CrimeFlare's nsout.zip archive into a dictionary."""
     # Open nsout archive, parse out required data, store into a list
     try:
-        znsout = zipfile.ZipFile('{}/nsout.zip'.format(cfdbpath))
+        znsout = zipfile.ZipFile(f'{cfdbpath}/nsout.zip')
         for finfo in znsout.infolist():
             ifile = znsout.open(finfo)
             for record in ifile.readlines():
@@ -124,8 +127,7 @@ def parsensout(cfdbpath):
                         NSPLIT.remove(DOMAIN)
                         NS1 = ' '.join(NSPLIT[:-2])
                         NS2 = ' '.join(NSPLIT[-2:])
-                    pass
-                _nsdict[DOMAIN] = '{} {}'.format(NS1, NS2)
+                _nsdict[DOMAIN] = f'{NS1} {NS2}'
     except(zipfile.BadZipfile):
         print("[-] Bad checksum on downloaded archive. Try to update again.")
         raise SystemExit
@@ -134,7 +136,7 @@ def parsecountry(cfdbpath):
     """Parse CrimeFlare's country.zip archive into a dictionary."""
     # Open country archive, parse out required data, store into a list
     try:
-        zcountry = zipfile.ZipFile('{}/country.zip'.format(cfdbpath))
+        zcountry = zipfile.ZipFile(f'{cfdbpath}/country.zip')
         for finfo in zcountry.infolist():
             ifile = zcountry.open(finfo)
             for record in ifile.readlines():
@@ -142,37 +144,31 @@ def parsecountry(cfdbpath):
                     DOMAIN, IP, COUNTRY = record.decode('utf-8').split()
                 except(ValueError):
                     COUNTRY = ' '.join(map(str, record.decode('utf-8').split()[2:]))
-                _countrydict[DOMAIN] = '{}'.format(COUNTRY)
+                _countrydict[DOMAIN] = f'{COUNTRY}'
     except(zipfile.BadZipfile):
         print("[-] Bad checksum on downloaded archive. Try to update again.")
         raise SystemExit
 
 def nsdictlookup(domain):
     """Lookup nameservers for respective domain keys."""
-    if _nsdict.__contains__(domain):
-        return _nsdict[domain]
-    else:
-        return 'N/A'
+    return _nsdict[domain] if _nsdict.__contains__(domain) else 'N/A'
 
 
 def countrydictlookup(domain):
     """Lookup nameservers for respective domain keys."""
-    if _countrydict.__contains__(domain):
-        return _countrydict[domain]
-    else:
-        return 'N/A'
+    return _countrydict[domain] if _countrydict.__contains__(domain) else 'N/A'
 
 
 def parseipout(cfdbpath):
     """Parses ipout archive and creates SQLite3 database for CrimeFlare data"""
     # Remove database if exists. Dropping tables/updating rows drags on time
     try:
-        os.remove('{}/cf.db'.format(cfdbpath))
+        os.remove(f'{cfdbpath}/cf.db')
     except:
         pass
 
     # Connect to database
-    conn = sqlite3.connect('{}/cf.db'.format(cfdbpath))
+    conn = sqlite3.connect(f'{cfdbpath}/cf.db')
     c = conn.cursor()
 
     # Set PRAGMA variables for speed optimization purposes
@@ -186,9 +182,9 @@ def parseipout(cfdbpath):
     c.execute('''CREATE TABLE cfdb (domain TEXT, ip TEXT, created TEXT, nameservers TEXT, country TEXT)''')
 
     # Open ipout archive, parse out required data, store into a list
-    _ipoutlst = list()
+    _ipoutlst = []
     try:
-        zipout = zipfile.ZipFile('{}/ipout.zip'.format(cfdbpath))
+        zipout = zipfile.ZipFile(f'{cfdbpath}/ipout.zip')
         for finfo in zipout.infolist():
             ifile = zipout.open(finfo)
             for record in ifile.readlines():
@@ -208,46 +204,59 @@ def parseipout(cfdbpath):
 def updateCFdb(cfdbpath, updatehost):
     """Updates CrimeFlare archives"""
     # Check if files exist, download them otherwise
-    if not os.access('{}/ipout.zip'.format(cfdbpath), os.R_OK):
-        print("[-] ipout archive missing. Downloading to {}/ipout.zip".format(cfdbpath))
-        downloadCFdb(cfdbpath, '{}/ipout.zip'.format(updatehost), updatehost)
+    if not os.access(f'{cfdbpath}/ipout.zip', os.R_OK):
+        print(f"[-] ipout archive missing. Downloading to {cfdbpath}/ipout.zip")
+        downloadCFdb(cfdbpath, f'{updatehost}/ipout.zip', updatehost)
 
-    if not os.access('{}/nsout.zip'.format(cfdbpath), os.R_OK):
-        print("[-] nsout archive missing. Downloading to {}/nsout.zip".format(cfdbpath))
-        downloadCFdb(cfdbpath, '{}/nsout.zip'.format(updatehost), updatehost)
+    if not os.access(f'{cfdbpath}/nsout.zip', os.R_OK):
+        print(f"[-] nsout archive missing. Downloading to {cfdbpath}/nsout.zip")
+        downloadCFdb(cfdbpath, f'{updatehost}/nsout.zip', updatehost)
 
-    if not os.access('{}/country.zip'.format(cfdbpath), os.R_OK):
-        print("[-] country archive missing. Downloading to {}/country.zip".format(cfdbpath))
-        downloadCFdb(cfdbpath, '{}/country.zip'.format(updatehost), updatehost)
+    if not os.access(f'{cfdbpath}/country.zip', os.R_OK):
+        print(f"[-] country archive missing. Downloading to {cfdbpath}/country.zip")
+        downloadCFdb(cfdbpath, f'{updatehost}/country.zip', updatehost)
 
     # Grab filesizes of current archives
-    fipout = os.stat('{}/ipout.zip'.format(cfdbpath)).st_size
-    fnsout = os.stat('{}/nsout.zip'.format(cfdbpath)).st_size
-    fcountry = os.stat('{}/country.zip'.format(cfdbpath)).st_size
+    fipout = os.stat(f'{cfdbpath}/ipout.zip').st_size
+    fnsout = os.stat(f'{cfdbpath}/nsout.zip').st_size
+    fcountry = os.stat(f'{cfdbpath}/country.zip').st_size
 
     # HEAD requests to updatehost, compare filesizes to determine if we need to
     # freshen archives.
     try:
-        ripout = requests.head('{}/ipout.zip'.format(updatehost), headers={'Accept-Encoding': 'identity'})
-        rnsout = requests.head('{}/nsout.zip'.format(updatehost), headers={'Accept-Encoding': 'identity'})
-        rcountry = requests.head('{}/country.zip'.format(updatehost), headers={'Accept-Encoding': 'identity'})
+        ripout = requests.head(
+            f'{updatehost}/ipout.zip', headers={'Accept-Encoding': 'identity'}
+        )
+
+        rnsout = requests.head(
+            f'{updatehost}/nsout.zip', headers={'Accept-Encoding': 'identity'}
+        )
+
+        rcountry = requests.head(
+            f'{updatehost}/country.zip',
+            headers={'Accept-Encoding': 'identity'},
+        )
+
     except Exception:
-        print('[-] Could not make connection to {}. Confirm you have correct host.'.format(updatehost))
+        print(
+            f'[-] Could not make connection to {updatehost}. Confirm you have correct host.'
+        )
+
         raise SystemExit
 
     if ripout.status_code == 200 and rnsout.status_code == 200 and rcountry.status_code == 200:
         if int(ripout.headers['content-length']) != fipout:
             print('[+] Updating ipout.zip')
-            downloadCFdb(cfdbpath, '{}/ipout.zip'.format(updatehost), updatehost)
+            downloadCFdb(cfdbpath, f'{updatehost}/ipout.zip', updatehost)
         if int(rnsout.headers['content-length']) != fnsout:
             print('[+] Updating nsout.zip')
-            downloadCFdb(cfdbpath, '{}/nsout.zip'.format(updatehost), updatehost)
+            downloadCFdb(cfdbpath, f'{updatehost}/nsout.zip', updatehost)
         if int(rcountry.headers['content-length']) != fcountry:
             print('[+] Updating country.zip')
-            downloadCFdb(cfdbpath, '{}/country.zip'.format(updatehost), updatehost)
+            downloadCFdb(cfdbpath, f'{updatehost}/country.zip', updatehost)
         else:
             print('[+] The ipout/nsout archives are up to date')
-            if not os.access('{}/cf.db'.format(cfdbpath), os.R_OK):
+            if not os.access(f'{cfdbpath}/cf.db', os.R_OK):
                 createCFdb(cfdbpath)
     else:
         print('[-] Archives missing on host. Check URL.')

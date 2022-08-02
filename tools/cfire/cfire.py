@@ -121,12 +121,10 @@ def clean_uri(targets):
 
 
 def check_cf_ranges(IP):
-    # Confirms if provide IP lives within Cloudflare range from CF_RANGES
-    # Not entirely accurate, make sure to confirm results.
-    for CIDR in ranges.CF_RANGES:
-        if netaddr.IPAddress(IP) in netaddr.IPNetwork(CIDR):
-            return True
-    return False
+    return any(
+        netaddr.IPAddress(IP) in netaddr.IPNetwork(CIDR)
+        for CIDR in ranges.CF_RANGES
+    )
 
 
 def dns_resolver(hostname):
@@ -144,21 +142,22 @@ def query_crimeflare_database(cfdbpath, domain=None, ip=None, created=None, name
     # Setup query
     if domain:
         # Search by domain
-        _query = "SELECT * FROM cfdb WHERE domain='{}'".format(domain)
+        _query = f"SELECT * FROM cfdb WHERE domain='{domain}'"
     elif ip:
         # Search records for matching IP addresses
         #_query = "SELECT * FROM cfdb WHERE ip='{}' AND domain!='{}'".format(ip, domain)
-        _query = "SELECT * FROM cfdb WHERE ip='{}'".format(ip)
+        _query = f"SELECT * FROM cfdb WHERE ip='{ip}'"
     elif created:
         # Using this could be beneficial later on with implementation of analytics, graphs, etc
-        _query = "SELECT * FROM cfdb WHERE created='{}'".format(created)
+        _query = f"SELECT * FROM cfdb WHERE created='{created}'"
     elif nameservers:
         # Searching by nameserver may identify domains by same user
-        _query = "SELECT * FROM cfdb WHERE nameservers='{}' AND domain!='{}'".format(nameservers, domain)
+        _query = f"SELECT * FROM cfdb WHERE nameservers='{nameservers}' AND domain!='{domain}'"
+
 
     # Connect to database
     try:
-        con = sqlite3.connect('{}/cf.db'.format(cfdbpath))
+        con = sqlite3.connect(f'{cfdbpath}/cf.db')
 
         # Execute our query
         with con:
@@ -173,17 +172,14 @@ def query_crimeflare_database(cfdbpath, domain=None, ip=None, created=None, name
     except(sqlite3.OperationalError):
         print("[-] CrimeFlare database not found. Install with -u|--update")
         raise SystemExit
-    except(Exception) as err:
-        print("[-] Exception raised: {}".format(err))
+    except Exception as err:
+        print(f"[-] Exception raised: {err}")
         raise SystemExit
     finally:
         con.close()
 
     # Return data to main
-    if rows != []:
-        return rows
-    else:
-        return False
+    return rows if rows != [] else False
 
 def printlog(message, logpath=False):
     # I think the logging module is great, but this will be used for the time being
@@ -204,50 +200,59 @@ def printlog(message, logpath=False):
         #     os.umask(umask_original)
         # with os.fdopen(fdesc, 'w') as fout:
         with open(logpath, 'a') as fout:
-            fout.write("{}\n".format(message))
-    print("{}".format(message))
+            fout.write(f"{message}\n")
+    print(f"{message}")
 
 
 def crimeflare_db_lookup(target, cfdbpath, logpath=False):
-    _found = []
-    TARGET = dns_resolver(target)
-    if not TARGET:
-        printlog("[-] Could not resolve domain: {}".format(target), logpath)
-    else:
+    if TARGET := dns_resolver(target):
         if check_cf_ranges(TARGET):
-            printlog("[*] {} ({}) is hosted on Cloudflare network".format(target, TARGET), logpath)
+            printlog(f"[*] {target} ({TARGET}) is hosted on Cloudflare network", logpath)
         else:
-            printlog("[!] {} ({}) is NOT hosted on Cloudflare network.".format(target, TARGET), logpath)
+            printlog(
+                f"[!] {target} ({TARGET}) is NOT hosted on Cloudflare network.",
+                logpath,
+            )
+
             if not _foundips.__contains__(TARGET):
                 _foundips.append(TARGET)
-    _results = query_crimeflare_database(cfdbpath, domain=target)
-    if not _results:
-        printlog("[-] No records found for {}".format(target), logpath)
     else:
-        print("[*] Found {} records:".format(_results.__len__()))
+        printlog(f"[-] Could not resolve domain: {target}", logpath)
+    if _results := query_crimeflare_database(cfdbpath, domain=target):
+        print(f"[*] Found {_results.__len__()} records:")
+        _found = []
         for result in _results:
             _domain, _ip, _created, _nameservers, _country = result
-            printlog('Domain: {}   IP: {}  When: {}    Nameservers:    {}  Country:    {}'.format(_domain, _ip, _created, _nameservers, _country), logpath)
+            printlog(
+                f'Domain: {_domain}   IP: {_ip}  When: {_created}    Nameservers:    {_nameservers}  Country:    {_country}',
+                logpath,
+            )
+
             if not _found.__contains__(_ip):
                 _found.append(_ip)
             if not _foundips.__contains__(_ip):
                 _foundips.append(_ip)
-            # if not _foundns.__contains__(_nameservers):
-            #     _foundns.append(_nameservers)
+                    # if not _foundns.__contains__(_nameservers):
+                    #     _foundns.append(_nameservers)
 
         # Lookup domains pointing to discovered IPs
         if _found != []:
             printlog('[*] Checking if other domains are hosted on discovered IPs', logpath)
             for _ip in _found:
                 _ipresults = None
-                _ipresults = query_crimeflare_database(cfdbpath, ip=_ip)
-                if _ipresults:
+                if _ipresults := query_crimeflare_database(cfdbpath, ip=_ip):
                     for ipresult in _ipresults:
                         _domain, _ip, _created, _nameservers, _country = ipresult
                         if _domain != target:
-                            printlog('Domain: {}   IP: {}  When: {}    Nameservers:    {}  Country:    {}'.format(_domain, _ip, _created, _nameservers, _country), logpath)
+                            printlog(
+                                f'Domain: {_domain}   IP: {_ip}  When: {_created}    Nameservers:    {_nameservers}  Country:    {_country}',
+                                logpath,
+                            )
+
                 else:
                     printlog('[*] No other domains pointing to discovered IPs', logpath)
+    else:
+        printlog(f"[-] No records found for {target}", logpath)
         #
         # # Lookup domains using same nameservers as target
         # if _foundns != []:
@@ -263,14 +268,17 @@ def sublister_engine_query(domain, cfdbpath, timeout, logpath=False):
     print("[*] Starting search engine scan")
     try:
         eresults = sublist3r.main(domain, 8, False, False, True, False, False, None)
-    except(UnboundLocalError):
-        printlog("[-] Search engine scan ran into rate limiting issues. Scan {} again later".format(domain), args.log)
-        pass
+    except UnboundLocalError:
+        printlog(
+            f"[-] Search engine scan ran into rate limiting issues. Scan {domain} again later",
+            args.log,
+        )
+
     if eresults != []:
         print("[*] Iterating over search engine results")
         for eresult in eresults:
             # Set a timeout to avoid search engine throttling
-            printlog("[*] Engine result: {}".format(eresult), logpath)
+            printlog(f"[*] Engine result: {eresult}", logpath)
             crimeflare_db_lookup(eresult, cfdbpath, logpath)
 
 def ssdeepcompare(target, IP):
@@ -320,17 +328,22 @@ def main():
         if args.update:
             cflareupdate.updateCFdb(cfdbpath=args.cfdbpath, updatehost=args.updatehost)
 
-        printlog("[*] Start: {}".format(time.strftime("%c")), args.log)
+        printlog(f'[*] Start: {time.strftime("%c")}', args.log)
 
         if args.ip:
-            IPLookup = query_crimeflare_database(cfdbpath=args.cfdbpath, ip=args.ip)
-            if not IPLookup:
-                printlog("[-] {} was not discovered in archives.".format(args.ip), args.log)
-            else:
+            if IPLookup := query_crimeflare_database(
+                cfdbpath=args.cfdbpath, ip=args.ip
+            ):
                 for rets in IPLookup:
                     IPLDom, IPLIP, IPLDate, IPLNS, IPLCountry = rets
-                    printlog("[*] IP: {} seen hosting {} on {} via NS ({}) ({})".format(IPLIP, IPLDom, IPLDate, IPLNS, IPLCountry), args.log)
+                    printlog(
+                        f"[*] IP: {IPLIP} seen hosting {IPLDom} on {IPLDate} via NS ({IPLNS}) ({IPLCountry})",
+                        args.log,
+                    )
 
+
+            else:
+                printlog(f"[-] {args.ip} was not discovered in archives.", args.log)
         if args.target:
             print("[*] Looking target up on CrimeFlare database")
             crimeflare_db_lookup(args.target, args.cfdbpath, args.log)
@@ -369,18 +382,17 @@ def main():
 
             for domain in _TARGETS:
                 # Magic goes here
-                print("[*] Looking up {}".format(domain))
+                print(f"[*] Looking up {domain}")
                 crimeflare_db_lookup(domain, args.cfdbpath, args.log)
                 if args.engines:
                     time.sleep(int(args.timeout))
                     sublister_engine_query(domain, args.cfdbpath, args.timeout, args.log)
-                if args.ssdeep:
-                    if _foundips != []:
-                            for IP in _foundips:
-                                ssdeepcompare(domain, IP)
-                                _foundips.remove(IP)
+                if args.ssdeep and _foundips != []:
+                    for IP in _foundips:
+                        ssdeepcompare(domain, IP)
+                        _foundips.remove(IP)
 
-        printlog("[*] Complete: {}".format(time.strftime("%c")), args.log)
+        printlog(f'[*] Complete: {time.strftime("%c")}', args.log)
 
     except(KeyboardInterrupt):
         print("[!!] Program was interrupted (ctrl+c). Exiting...")

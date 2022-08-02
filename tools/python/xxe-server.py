@@ -55,14 +55,15 @@ class WebServer(SocketServer.BaseRequestHandler):
         """
         Blanketly return the XML payload regardless of who's asking.
         """
-        resp = """HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\nContent-length: {}\r\n\r\n{}\r\n\r\n""".format(len(payload), payload)
+        resp = f"""HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\nContent-length: {len(payload)}\r\n\r\n{payload}\r\n\r\n"""
+
         # self.request is a TCP socket connected to the client
         self.data = self.request.recv(4096).strip()
-        wlog("[WEB] {} Connected and sent:".format(self.client_address[0]))
-        wlog("{}".format(self.data))
+        wlog(f"[WEB] {self.client_address[0]} Connected and sent:")
+        wlog(f"{self.data}")
         # Send back same data but upper
         self.request.sendall(resp)
-        wlog("[WEB] Replied with:\n{}".format(resp))
+        wlog(f"[WEB] Replied with:\n{resp}")
 
 class FTPServer(SocketServer.BaseRequestHandler):
     """
